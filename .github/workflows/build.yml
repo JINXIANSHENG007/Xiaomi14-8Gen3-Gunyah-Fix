@@ -5326,11 +5326,11 @@ jobs:
             fi
           fi
 
-          # 确保 Gunyah 相关配置开启（GKI 默认可能为模块或关闭）
-          ensure_defconfig_value CONFIG_GUNYAH y
-          ensure_defconfig_value CONFIG_GUNYAH_PLATFORM_HOOKS y
-          ensure_defconfig_value CONFIG_GUNYAH_QCOM_PLATFORM y
-          echo "Gunyah 8 Gen 3 SCM VMID 修复完成"
+          # Gunyah 驱动保持 GKI 默认（模块方式 =m），不强制内建 y。
+          # 内建会在启动早期初始化 Gunyah，与 qcom_scm/mem_buf 等组件加载
+          # 顺序冲突，导致内核早期 panic（第一屏无限重启）。
+          # 补丁修改的 gunyah_qcom.c 会在模块编译时生效。
+          echo "Gunyah 8 Gen 3 SCM VMID 修复完成（Gunyah 驱动保持 GKI 默认模块方式）"
 
       - name: 编译内核
         uses: nick-fields/retry@v4
