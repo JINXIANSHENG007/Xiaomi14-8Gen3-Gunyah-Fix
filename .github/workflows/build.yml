@@ -5281,75 +5281,56 @@ jobs:
 
           echo "ABK Control 管理器桥接校验通过。"
 
-      - name: 应用 Gunyah 8 Gen 3 VMID 修复
+      - name: 应用 Gunyah 8 Gen 3 VMID 修复补丁
         if: inputs.use_gunyah
-        working-directory: ${{ env.KERNEL_ROOT }}
+        working-directory: ${{ env.KERNEL_ROOT }}/common
         run: |
           set -euo pipefail
-          GUNYAH_FILE="common/drivers/virt/gunyah/gunyah_qcom.c"
+
+          ensure_defconfig_value() {
+            local cfg="$1"
+            local value="$2"
+            local line="${cfg}=${value}"
+
+            if grep -qxF "$line" "$DEFCONFIG"; then
+              return 0
+            fi
+
+            if grep -Eq "^${cfg}=|^# ${cfg} is not set$" "$DEFCONFIG"; then
+              sed -i -E "s|^${cfg}=.*|${line}|; s|^# ${cfg} is not set$|${line}|" "$DEFCONFIG"
+            else
+              echo "$line" >> "$DEFCONFIG"
+            fi
+          }
+
+          GUNYAH_FILE="drivers/virt/gunyah/gunyah_qcom.c"
+          PATCH_FILE="$GITHUB_WORKSPACE/patches/0001-gunyah-fix-scm-vmid-gki-compat.patch"
           if [ ! -f "$GUNYAH_FILE" ]; then
             echo "::warning::未找到 Gunyah 驱动 ($GUNYAH_FILE)，跳过补丁"
             exit 0
           fi
-          if ! grep -q "DEFINE_MUTEX(gunyah_qcom_vmid_map_lock)" "$GUNYAH_FILE"; then
-            python3 - "$GUNYAH_FILE" <<'PY'
-          import sys
-          path = sys.argv[1]
-          content = open(path).read()
-          if "gunyah_qcom_vmid_map_lock" in content:
-              print("VMID 修复已存在，跳过")
-              sys.exit(0)
-          code = r'''
-          /* 8 Gen 3 Gunyah VMID Fix */
-          #include <linux/mutex.h>
-          #include <linux/arm-smccc.h>
-          #include <linux/of.h>
-          #include <linux/slab.h>
-
-          static DEFINE_MUTEX(gunyah_qcom_vmid_map_lock);
-
-          static void qcom_scm_map_vmid(u32 source_vmid, u32 target_vmid) {
-              if (source_vmid >= GUNYAH_VMID_MAX || target_vmid >= GUNYAH_VMID_MAX)
-                  return;
-              mutex_lock(&gunyah_qcom_vmid_map_lock);
-              qcom_scm_vmid_map[source_vmid] = target_vmid;
-              mutex_unlock(&gunyah_qcom_vmid_map_lock);
-          }
-
-          static int gunyah_fixup_vmid_map(struct platform_device *pdev) {
-              struct device_node *node;
-              u32 source, target;
-              int ret = 0;
-
-              mutex_lock(&gunyah_qcom_vmid_map_lock);
-              for (node = NULL; ; node = NULL) {
-                  node = of_find_compatible_node(node, NULL, "qcom,gunyah-vmid-map");
-                  if (!node)
-                      break;
-                  if (of_property_read_u32_index(node, "source-vmid", 0, &source) ||
-                      of_property_read_u32_index(node, "target-vmid", 0, &target)) {
-                      of_node_put(node);
-                      continue;
-                  }
-                  if (source < GUNYAH_VMID_MAX && target < GUNYAH_VMID_MAX)
-                      qcom_scm_vmid_map[source] = target;
-              }
-              mutex_unlock(&gunyah_qcom_vmid_map_lock);
-              return ret;
-          }
-          '''
-          anchor = "static int gunyah_qcom_probe"
-          if anchor in content:
-              pos = content.index(anchor)
-              content = content[:pos] + code + "\n" + content[pos:]
-              open(path, 'w').write(content)
-              print("Gunyah VMID 修复已应用")
-          else:
-              print("警告: 未找到注入锚点，跳过补丁")
-          PY
+          if grep -q "qcom_scm_map_vmid" "$GUNYAH_FILE"; then
+            echo "Gunyah SCM VMID 修复已应用，跳过"
           else
-            echo "Gunyah VMID 修复已应用（已包含锁保护），跳过"
+            if [ ! -f "$PATCH_FILE" ]; then
+              echo "::error::未找到 Gunyah VMID 修复补丁: $PATCH_FILE"
+              exit 1
+            fi
+            if git apply --check "$PATCH_FILE" 2>/dev/null; then
+              git apply "$PATCH_FILE"
+              echo "Gunyah SCM VMID 修复补丁应用成功"
+            else
+              echo "::error::Gunyah VMID 修复补丁无法应用，请检查内核源码版本是否匹配"
+              git apply --verbose "$PATCH_FILE" 2>&1 | head -30 || true
+              exit 1
+            fi
           fi
+
+          # 确保 Gunyah 相关配置开启（GKI 默认可能为模块或关闭）
+          ensure_defconfig_value CONFIG_GUNYAH y
+          ensure_defconfig_value CONFIG_GUNYAH_PLATFORM_HOOKS y
+          ensure_defconfig_value CONFIG_GUNYAH_QCOM_PLATFORM y
+          echo "Gunyah 8 Gen 3 SCM VMID 修复完成"
 
       - name: 编译内核
         uses: nick-fields/retry@v4
