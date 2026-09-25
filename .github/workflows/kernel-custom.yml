@@ -7,6 +7,11 @@ permissions:
 on:
   workflow_dispatch:
     inputs:
+      custom_kernel_options:
+        description: "自定义内核选项（每行一条 CONFIG_xxx=y）"
+        required: false
+        type: string
+        default: ""
       # ==================== 内核版本配置 ====================
       android_version:
         description: "Android 版本"
@@ -169,6 +174,7 @@ jobs:
       enable_susfs: ${{ !inputs.cancel_susfs }}
       use_gunyah: ${{ inputs.use_gunyah }}
       virtualization_support: ${{ inputs.virtualization_support || 'off' }}
+      custom_kernel_options: ${{ inputs.custom_kernel_options || '' }}
 
   get-ksu-manager:
     uses: ./.github/workflows/get-manager.yml
