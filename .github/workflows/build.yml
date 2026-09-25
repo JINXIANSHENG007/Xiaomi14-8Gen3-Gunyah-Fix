@@ -980,7 +980,10 @@ jobs:
             sed -i "s/\"${FORMATTED_BRANCH}\"/\"deprecated\/${FORMATTED_BRANCH}\"/g" $DEFAULT_MANIFEST_PATH
           fi
 
-          $REPO --trace sync -c -j$(nproc --all) --no-tags --fail-fast
+          if ! $REPO --trace sync -c -j$(nproc --all) --no-tags --depth=1 --fail-fast; then
+            echo "== shallow(--depth=1) sync failed, falling back to full-history sync =="
+            $REPO --trace sync -c -j$(nproc --all) --no-tags --fail-fast || exit 1
+          fi
           echo "REMOTE_BRANCH=$REMOTE_BRANCH" >> $GITHUB_ENV
 
       - name: 应用 Stock Config 伪装
