@@ -962,6 +962,12 @@ jobs:
               output_path.unlink()
           PY
 
+      - name: 缓存内核源码 (repo sync 加速)
+        id: ksrc
+        uses: actions/cache@v5
+        with:
+          path: ${{ env.KERNEL_ROOT }}
+          key: ksrc-${{ inputs.android_version }}-${{ inputs.kernel_version }}-v1
       - name: 初始化并同步内核源码
         working-directory: ${{ env.KERNEL_ROOT }}
         run: |
